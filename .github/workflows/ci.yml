@@ -13,14 +13,14 @@ jobs:
       # 1. Check out the repo
       - uses: actions/checkout@v3
 
-      # 2. Set up Docker Buildx (BuildKit)
+      # 2. Set up QEMU & Buildx for Docker layer caching
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      # 3. Cache Docker layers
+      # 3. Cache Docker buildx state between runs
       - name: Cache Docker layers
         uses: actions/cache@v3
         with:
@@ -29,7 +29,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildx-
 
-      # 4. Build the Docker image with caching
+      # 4. Build the Docker image, reading & writing the buildx cache
       - name: Build Docker image with cache
         run: |
           docker buildx create --use
@@ -39,11 +39,15 @@ jobs:
             --load \
             -f Dockerfile \
             -t my-nl2sql-app:ci .
-          # rotate cache dirs
+          # rotate the cache dir
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
-      # 5. Run your tests inside the image
+      # 5. Run pytest inside that built image
       - name: Run tests in container
         run: |
-          docker run --rm my-nl2sql-app:ci pytest --maxfail=1 --disable-warnings -q
+          docker run --rm \
+            -w /app \
+            -e PYTHONPATH=/app \
+            my-nl2sql-app:ci \
+            pytest --maxfail=1 --disable-warnings -q
