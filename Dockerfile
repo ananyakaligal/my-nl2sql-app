@@ -20,4 +20,17 @@ ENV STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION=false
 
 EXPOSE 7860
 
+# Add inside Dockerfile before CMD
+RUN mkdir -p /app/.streamlit && \
+    echo "\
+[server]\n\
+headless = true\n\
+port = 7860\n\
+enableCORS = false\n\
+enableXsrfProtection = false\n\
+\n\
+[browser]\n\
+gatherUsageStats = false\n\
+" > /app/.streamlit/config.toml
+
 CMD ["streamlit", "run", "src/app.py", "--server.port=7860", "--server.address=0.0.0.0"]

@@ -6,7 +6,6 @@ from sentence_transformers import SentenceTransformer
 from huggingface_hub import login
 
 # Ensure correct Streamlit and cache directories
-os.environ["STREAMLIT_HOME"] = os.getenv("STREAMLIT_HOME", "/tmp/.streamlit")
 os.environ["TRANSFORMERS_CACHE"] = os.getenv("TRANSFORMERS_CACHE", "/tmp/.cache")
 
 # Login to Hugging Face using token (only if provided)

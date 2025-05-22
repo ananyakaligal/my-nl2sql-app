@@ -8,7 +8,6 @@ import re
 
 # === Ensure proper writable directories for HF Spaces ===
 os.makedirs(os.getenv("TRANSFORMERS_CACHE", "/tmp/.cache"), exist_ok=True)
-os.makedirs(os.getenv("STREAMLIT_HOME", "/tmp/.streamlit"), exist_ok=True)
 
 # --- Ensure vectorstore directory exists relative to src/app.py ---
 vectorstore_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../vectorstore"))
