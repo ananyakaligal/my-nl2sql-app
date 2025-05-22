@@ -1,0 +1,49 @@
+# .github/workflows/ci.yml
+name: CI
+
+# Trigger on every push or PR to any branch (you can narrow this to only main if you like)
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+    branches:
+      - "**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      # 1) Check out your repo
+      - uses: actions/checkout@v4
+
+      # 2) Set up Python 3.10
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.10
+
+      # 3) Install dependencies
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --no-cache-dir -r requirements.txt
+          # ensure pytest is present
+          pip install pytest
+
+      # 4) Lint your code (optional)
+      - name: Lint with flake8
+        run: |
+          pip install flake8
+          flake8 src tests
+
+      # 5) Type-check with mypy (optional)
+      - name: Type-check with mypy
+        run: |
+          pip install mypy
+          mypy src
+
+      # 6) Run your unit+integration tests
+      - name: Run pytest
+        run: |
+          pytest --maxfail=1 --disable-warnings -q
