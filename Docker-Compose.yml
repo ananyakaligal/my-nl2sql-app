@@ -1,0 +1,17 @@
+version: "3.8"
+services:
+  nl2sql-app:
+    build: .
+    container_name: nl2sql-app
+    ports:
+      - "8000:8000"      # host:container
+    env_file:
+      - .env
+    environment:
+      - PORT=8000        # your app will pick this up as $PORT
+      - STREAMLIT_SERVER_HEADLESS=true
+      - STREAMLIT_SERVER_ENABLE_CORS=false
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+    volumes:
+      - ./vectorstore:/app/vectorstore
+    restart: unless-stopped
