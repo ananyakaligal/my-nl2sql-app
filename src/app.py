@@ -7,21 +7,22 @@ import sqlite3
 import streamlit as st
 from sqlalchemy import create_engine
 from streamlit_ace import st_ace
-import google.generativeai as genai
+from google import genai    # ← new unified GenAI SDK
 
 # ─── Configure Gemini API Key ───────────────────────────────────────────────────
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+# Make sure GOOGLE_API_KEY is set in your env (Spaces “Secrets” or locally)
+client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"), vertexai=False)
 
 def translate_to_english(text: str) -> str:
-    """Use Gemini’s text-bison to translate any-language text into clear English."""
+    """Use Gemini to translate any-language text into clear English."""
     prompt = f"Translate the following text into English:\n\n{text}"
-    resp = genai.predict(
-        model="models/text-bison-001",
-        prompt=prompt,
+    response = client.models.generate_content(
+        model="gemini-2.0-flash-001",
+        contents=[prompt],
         temperature=0.0,
         max_output_tokens=256,
     )
-    return resp.result.strip()
+    return response.text.strip()
 
 def clean_sql(raw_sql: str) -> str:
     """Strip markdown fences and drop trailing blank lines."""
