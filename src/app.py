@@ -9,20 +9,19 @@ from sqlalchemy import create_engine
 from streamlit_ace import st_ace
 import google.generativeai as genai
 
-# — Configure Gemini for translation —
+# ─── Configure Gemini API Key ───────────────────────────────────────────────────
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
 def translate_to_english(text: str) -> str:
-    """Translate any-language text into English via Gemini."""
-    resp = genai.chat.completions.create(
-        model="models/chat-bison-001",
-        prompt_messages=[
-            {"author": "system", "content": "You are a translator. Convert user text into clear English."},
-            {"author": "user",   "content": text},
-        ],
+    """Use Gemini to translate any-language text into clear English."""
+    prompt = f"Translate the following text into English:\n\n{text}"
+    resp = genai.generate_text(
+        model="models/text-bison-001",
+        prompt=prompt,
         temperature=0.0,
+        max_output_tokens=256,
     )
-    return resp.choices[0].message.content.strip()
+    return resp.result.strip()
 
 def clean_sql(raw_sql: str) -> str:
     """Strip markdown fences and trailing blank lines."""
@@ -33,10 +32,10 @@ def clean_sql(raw_sql: str) -> str:
         lines.pop()
     return "\n".join(lines).strip()
 
-# — ensure HF cache dir exists in Spaces —
+# ─── Ensure HF cache dir exists in Spaces ────────────────────────────────────────
 os.makedirs(os.getenv("TRANSFORMERS_CACHE", "/tmp/.cache"), exist_ok=True)
 
-# — vectorstore setup (unchanged) —
+# ─── Vectorstore setup (unchanged) ──────────────────────────────────────────────
 vectorstore_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../vectorstore"))
 os.makedirs(vectorstore_dir, exist_ok=True)
 index_path = os.path.join(vectorstore_dir, "schema_index.faiss")
@@ -47,7 +46,7 @@ from utils.llm_sql_generator   import generate_sql_from_prompt, generate_sql_sch
 from langchain_sql_pipeline    import generate_sql_with_langchain
 from utils.er_diagram          import render_er_diagram
 
-# — Streamlit page config —
+# ─── Streamlit page config ──────────────────────────────────────────────────────
 st.set_page_config(page_title="Text-to-SQL RAG Demo", layout="wide")
 st.title("Text-to-SQL Generator")
 
@@ -129,9 +128,9 @@ else:
         placeholder=f"Enter your question in {lang_choice}",
         key="user_question"
     )
-    # — NEW: show English translation right below —
+    # ─── Right below: English translation ───────────────────────────────
     if question:
-        with st.spinner("Translating to English…"):
+        with st.spinner("Translating…"):
             translated = translate_to_english(question)
         st.text_area(
             "➜ English Translation",
@@ -144,6 +143,7 @@ else:
 # ─── Step 3: GENERATE SQL ───────────────────────────────────────────────────────
 #
 mode = st.selectbox("3) Generation Mode", ["LangChain RAG", "Manual FAISS", "Schema Only"], key="mode_select")
+
 if st.button("Generate SQL", key="generate_btn") and question:
     with st.spinner("Generating SQL…"):
         if mode == "LangChain RAG":
