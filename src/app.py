@@ -9,10 +9,10 @@ from streamlit_ace import st_ace
 
 # — Utility to clean fenced SQL and trim blank lines —
 def clean_sql(raw_sql: str) -> str:
-    # remove ```sql fences
+    # strip ```sql fences
     sql = re.sub(r"^```(?:sql)?\s*", "", raw_sql)
     sql = re.sub(r"```$", "", sql)
-    # split into lines, drop trailing empty lines
+    # drop trailing empty lines
     lines = sql.splitlines()
     while lines and not lines[-1].strip():
         lines.pop()
@@ -21,10 +21,13 @@ def clean_sql(raw_sql: str) -> str:
 # ensure a writable cache directory
 os.makedirs(os.getenv("TRANSFORMERS_CACHE", "/tmp/.cache"), exist_ok=True)
 
-# import pipeline components
+# import your pipeline pieces
 from utils.schema_extractor import extract_schema_sqlite, extract_schema_rdbms
 from utils.embeddings import build_or_load_index
-from utils.llm_sql_generator import generate_sql_from_prompt, generate_sql_schema_only
+from utils.llm_sql_generator import (
+    generate_sql_from_prompt,
+    generate_sql_schema_only,
+)
 from langchain_sql_pipeline import generate_sql_with_langchain
 from utils.er_diagram import render_er_diagram
 
@@ -32,7 +35,7 @@ from utils.er_diagram import render_er_diagram
 st.set_page_config(page_title="Text-to-SQL", layout="wide")
 st.title("Text-to-SQL")
 
-# — Sidebar: Database connection —
+# — Sidebar: connect to a database —
 with st.sidebar:
     st.header("Database Setup")
     db_type = st.selectbox("Type", ["SQLite", "PostgreSQL", "MySQL"])
@@ -46,7 +49,8 @@ with st.sidebar:
         uploaded = st.file_uploader("Upload .sqlite/.db", type=["sqlite", "db"])
         if uploaded:
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".sqlite")
-            tmp.write(uploaded.read()); tmp.close()
+            tmp.write(uploaded.read())
+            tmp.close()
             db_path = tmp.name
             conn = sqlite3.connect(db_path)
             schema = extract_schema_sqlite(db_path)
@@ -61,14 +65,14 @@ with st.sidebar:
     else:
         with st.expander("Connection info"):
             host = st.text_input("Host")
-            port = st.text_input("Port", "5432" if db_type=="PostgreSQL" else "3306")
+            port = st.text_input("Port", "5432" if db_type == "PostgreSQL" else "3306")
             user = st.text_input("User")
             pwd = st.text_input("Password", type="password")
             name = st.text_input("Database")
         if st.button("Connect"):
             uri = (
                 f"postgresql://{user}:{pwd}@{host}:{port}/{name}"
-                if db_type=="PostgreSQL"
+                if db_type == "PostgreSQL"
                 else f"mysql+pymysql://{user}:{pwd}@{host}:{port}/{name}"
             )
             try:
@@ -81,7 +85,7 @@ with st.sidebar:
             except Exception as e:
                 st.error(e)
 
-# if not connected, stop here
+# if not connected, stop
 if not schema:
     st.info("Use the sidebar to upload or connect to a database.")
     st.stop()
@@ -106,28 +110,24 @@ if st.button("Generate SQL"):
     st.session_state["sql"] = clean_sql(raw)
     st.session_state["ran"] = False
 
-# — Editable SQL editor with padded blank lines for consistent gutter —
+# — Editable SQL editor inside a form, with min_lines to show gutter on blank rows —
 if "sql" in st.session_state:
     sql_text = st.session_state["sql"]
-    lines = sql_text.splitlines()
-    line_count = len(lines)
+    # count lines and add 2 extra for blank gutter rows
+    line_count = len(sql_text.splitlines())
     extra_blank = 2
     display_lines = line_count + extra_blank
-    # ~30px per line, clamp between 120px and 500px
-    height_px = min(max(display_lines * 30, 120), 500)
 
     with st.form("sql_form"):
         st.subheader("Generated SQL (editable)")
-        # pad with actual blank lines so gutter numbers appear
-        padded_sql = sql_text + "\n" * extra_blank
         edited_sql = st_ace(
-            value=padded_sql,
+            value=sql_text,
             language="sql",
             theme="github",
-            show_gutter=True,
+            show_gutter=True,         # enable line numbers
             show_print_margin=False,
             wrap=True,
-            height=height_px,
+            min_lines=display_lines,  # ensure gutter lines for blank rows
             key="sql_editor"
         )
         run = st.form_submit_button("Run")
