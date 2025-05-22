@@ -2,28 +2,48 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
-  test:
+  build-and-test:
     runs-on: ubuntu-latest
-
     steps:
-      # 1) Check out the repo
-      - name: Checkout code
-        uses: actions/checkout@v4
+      # 1. Check out the repo
+      - uses: actions/checkout@v3
 
-      # 2) Build your Docker image (uses Dockerfile in repo root)
-      - name: Build Docker image
+      # 2. Set up Docker Buildx (BuildKit)
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      # 3. Cache Docker layers
+      - name: Cache Docker layers
+        uses: actions/cache@v3
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      # 4. Build the Docker image with caching
+      - name: Build Docker image with cache
         run: |
-          docker build \
-            --file Dockerfile \
-            --tag my-nl2sql-app:ci .
+          docker buildx create --use
+          docker buildx build \
+            --cache-from=type=local,src=/tmp/.buildx-cache \
+            --cache-to=type=local,dest=/tmp/.buildx-cache-new,mode=max \
+            --load \
+            -f Dockerfile \
+            -t my-nl2sql-app:ci .
+          # rotate cache dirs
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
-      # 3) Run pytest inside the container
+      # 5. Run your tests inside the image
       - name: Run tests in container
         run: |
-          docker run --rm my-nl2sql-app:ci \
-            pytest --maxfail=1 --disable-warnings -q
+          docker run --rm my-nl2sql-app:ci pytest --maxfail=1 --disable-warnings -q
