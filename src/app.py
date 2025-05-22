@@ -5,6 +5,7 @@ import tempfile
 from sqlalchemy import create_engine
 import os
 import re
+from streamlit_ace import st_ace
 
 # === Ensure proper writable directories for HF Spaces ===
 os.makedirs(os.getenv("TRANSFORMERS_CACHE", "/tmp/.cache"), exist_ok=True)
@@ -27,7 +28,7 @@ from utils.er_diagram import render_er_diagram
 
 # --- SQL cleaning utility ---
 def clean_sql(raw_sql):
-    sql = re.sub(r"^```(?:sql)?\s*", "", raw_sql)
+    sql = re.sub(r"^```(?:sql)?\\s*", "", raw_sql)
     sql = re.sub(r"```$", "", sql)
     return sql.strip()
 
@@ -122,13 +123,13 @@ if schema_data:
                 raw = generate_sql_schema_only(question, schema_data)
         sql = clean_sql(raw)
 
-        st.subheader("Generated SQL")
-        st.code(sql, language="sql")
+        st.subheader("Generated SQL (editable)")
+        edited_sql = st_ace(value=sql, language="sql", theme="dracula", key="editor")
 
-        if db_connector:
+        if db_connector and st.button("Run Query", use_container_width=True, key="run_query"):
             st.subheader("Results")
             try:
-                df = db_connector(sql)
+                df = db_connector(edited_sql)
                 st.metric("Rows returned", len(df))
                 st.dataframe(df, use_container_width=True)
             except Exception as e:
