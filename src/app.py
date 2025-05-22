@@ -7,22 +7,15 @@ import sqlite3
 import streamlit as st
 from sqlalchemy import create_engine
 from streamlit_ace import st_ace
-import google.generativeai as genai
 
-# ─── Configure Gemini API Key ───────────────────────────────────────────────────
-# Make sure you set GOOGLE_API_KEY in your Space’s Secrets (or local env)
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+# ─── Your existing Gemini wrapper ───────────────────────────────────────────────
+from gemini_flash_beta_llm import GeminiFlashBetaLLM
+translator = GeminiFlashBetaLLM()
 
 def translate_to_english(text: str) -> str:
-    """Use Gemini (text-bison) to translate any-language text into clear English."""
+    """Translate any-language text into English via Gemini Flash."""
     prompt = f"Translate the following text into English:\n\n{text}"
-    resp = genai.text.generate(
-        model="models/text-bison-001",
-        prompt=prompt,
-        temperature=0.0,
-        max_output_tokens=256,
-    )
-    return resp.text.strip()
+    return translator(prompt).strip()
 
 def clean_sql(raw_sql: str) -> str:
     """Strip markdown fences and drop trailing blank lines."""
@@ -33,10 +26,10 @@ def clean_sql(raw_sql: str) -> str:
         lines.pop()
     return "\n".join(lines).strip()
 
-# ─── Ensure HF cache dir exists in Spaces ────────────────────────────────────────
+# ─── Ensure Hugging Face cache dir exists ───────────────────────────────────────
 os.makedirs(os.getenv("TRANSFORMERS_CACHE", "/tmp/.cache"), exist_ok=True)
 
-# ─── Vectorstore setup (unchanged) ──────────────────────────────────────────────
+# ─── Vectorstore setup ──────────────────────────────────────────────────────────
 vectorstore_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../vectorstore"))
 os.makedirs(vectorstore_dir, exist_ok=True)
 index_path = os.path.join(vectorstore_dir, "schema_index.faiss")
@@ -129,7 +122,6 @@ else:
         placeholder=f"Enter your question in {lang_choice}",
         key="user_question"
     )
-    # ─── Right below: English translation ───────────────────────────────
     if question:
         with st.spinner("Translating to English…"):
             translated = translate_to_english(question)
