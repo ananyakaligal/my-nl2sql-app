@@ -28,8 +28,8 @@ from utils.er_diagram import render_er_diagram
 
 # --- SQL cleaning utility ---
 def clean_sql(raw_sql):
-    sql = re.sub(r"^```(?:sql)?\\s*", "", raw_sql)
-    sql = re.sub(r"```$", "", sql)
+    sql = re.sub(r"^`{3}(?:sql)?\\s*", "", raw_sql)
+    sql = re.sub(r"`{3}$", "", sql)
     return sql.strip()
 
 # --- Page setup ---
@@ -55,6 +55,7 @@ with st.sidebar:
     db_type = st.selectbox("Type", ["SQLite", "PostgreSQL", "MySQL"])
     schema_data = None
     db_connector = None
+    db_path = None
 
     if db_type == "SQLite":
         uploaded = st.file_uploader("Upload .db/.sqlite/.sql", type=["db", "sqlite", "sql"])
@@ -62,8 +63,10 @@ with st.sidebar:
             tf = tempfile.NamedTemporaryFile(delete=False, suffix=".sqlite")
             tf.write(uploaded.read())
             tf.close()
-            schema_data = extract_schema_sqlite(tf.name)
-            db_connector = lambda q: pd.read_sql_query(q, sqlite3.connect(tf.name))
+            db_path = tf.name
+            schema_data = extract_schema_sqlite(db_path)
+            db_connector = lambda q: pd.read_sql_query(q, sqlite3.connect(db_path))
+            db_executor = lambda q: sqlite3.connect(db_path).cursor().execute(q)
 
     else:
         with st.expander("Enter credentials"):
@@ -82,6 +85,7 @@ with st.sidebar:
                 schema_data = extract_schema_rdbms(uri)
                 engine = create_engine(uri)
                 db_connector = lambda q: pd.read_sql_query(q, engine)
+                db_executor = lambda q: engine.execute(q)
                 st.success("Connected")
             except Exception as e:
                 st.error(f"{e}")
@@ -132,6 +136,13 @@ if schema_data:
                 df = db_connector(edited_sql)
                 st.metric("Rows returned", len(df))
                 st.dataframe(df, use_container_width=True)
+
+                # Re-extract schema and redraw
+                if db_path:
+                    schema_data = extract_schema_sqlite(db_path)
+                    st.subheader("Updated Schema Diagram")
+                    st.graphviz_chart(render_er_diagram(schema_data))
+
             except Exception as e:
                 st.error(f"Execution failed: {e}")
 else:
