@@ -13,9 +13,9 @@ import google.generativeai as genai
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
 def translate_to_english(text: str) -> str:
-    """Use Gemini to translate any-language text into clear English."""
+    """Use Gemini’s text-bison to translate any-language text into clear English."""
     prompt = f"Translate the following text into English:\n\n{text}"
-    resp = genai.generate_text(
+    resp = genai.predict(
         model="models/text-bison-001",
         prompt=prompt,
         temperature=0.0,
@@ -24,7 +24,7 @@ def translate_to_english(text: str) -> str:
     return resp.result.strip()
 
 def clean_sql(raw_sql: str) -> str:
-    """Strip markdown fences and trailing blank lines."""
+    """Strip markdown fences and drop trailing blank lines."""
     sql = re.sub(r"^```(?:sql)?\s*", "", raw_sql)
     sql = re.sub(r"```$", "", sql)
     lines = sql.splitlines()
@@ -130,7 +130,7 @@ else:
     )
     # ─── Right below: English translation ───────────────────────────────
     if question:
-        with st.spinner("Translating…"):
+        with st.spinner("Translating to English…"):
             translated = translate_to_english(question)
         st.text_area(
             "➜ English Translation",
