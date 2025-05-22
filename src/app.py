@@ -7,6 +7,30 @@ import sqlite3
 import streamlit as st
 from sqlalchemy import create_engine
 from streamlit_ace import st_ace
+import google.generativeai as genai
+
+# — Configure Gemini for translation —
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+
+def translate_to_english(text: str) -> str:
+    """Translate any language text into English via Gemini."""
+    resp = genai.chat.completions.create(
+        model="models/chat-bison-001",
+        prompt_messages=[
+            {"author": "system", "content": "You are a translator. Convert user text into clear English."},
+            {"author": "user",   "content": text},
+        ],
+        temperature=0.0,
+    )
+    return resp.choices[0].message.content.strip()
+
+def clean_sql(raw_sql: str) -> str:
+    sql = re.sub(r"^```(?:sql)?\s*", "", raw_sql)
+    sql = re.sub(r"```$", "", sql)
+    lines = sql.splitlines()
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return "\n".join(lines).strip()
 
 # — ensure HF cache dir exists in Spaces —
 os.makedirs(os.getenv("TRANSFORMERS_CACHE", "/tmp/.cache"), exist_ok=True)
@@ -22,14 +46,6 @@ from utils.llm_sql_generator   import generate_sql_from_prompt, generate_sql_sch
 from langchain_sql_pipeline    import generate_sql_with_langchain
 from utils.er_diagram          import render_er_diagram
 
-def clean_sql(raw_sql: str) -> str:
-    sql = re.sub(r"^```(?:sql)?\s*", "", raw_sql)
-    sql = re.sub(r"```$", "", sql)
-    lines = sql.splitlines()
-    while lines and not lines[-1].strip():
-        lines.pop()
-    return "\n".join(lines).strip()
-
 st.set_page_config(page_title="Text-to-SQL RAG Demo", layout="wide")
 st.title("Text-to-SQL Generator")
 
@@ -38,19 +54,19 @@ st.title("Text-to-SQL Generator")
 #
 with st.sidebar:
     st.header("1) Database Setup")
-    db_type = st.selectbox("DB Type", ["SQLite", "PostgreSQL", "MySQL"])
-    schema_data = connector = executor = conn = None
-    db_path = uri = None
+    db_type      = st.selectbox("DB Type", ["SQLite", "PostgreSQL", "MySQL"])
+    schema_data  = connector = executor = conn = None
+    db_path      = uri = None
 
     if db_type == "SQLite":
         uploaded = st.file_uploader("Upload .sqlite/.db", type=["sqlite", "db"])
         if uploaded:
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".sqlite")
             tmp.write(uploaded.read()); tmp.close()
-            db_path = tmp.name
-            conn = sqlite3.connect(db_path)
+            db_path     = tmp.name
+            conn        = sqlite3.connect(db_path)
             schema_data = extract_schema_sqlite(db_path)
-            connector = lambda q: pd.read_sql_query(q, conn)
+            connector   = lambda q: pd.read_sql_query(q, conn)
             def _exec(q):
                 c = conn.cursor(); c.execute(q); conn.commit(); return c
             executor = _exec
@@ -103,16 +119,28 @@ if input_mode == "English":
 else:
     lang_choice = st.selectbox(
         "Language",
-        ["Spanish","French","German","Chinese","Hindi","Japanese","Other"]
+        ["Spanish", "French", "German", "Chinese", "Hindi", "Japanese", "Other"]
     )
     question = st.text_area(
         f"Question (in {lang_choice})",
         placeholder=f"Enter your question in {lang_choice}",
         key="user_question"
     )
+    # **New**: translate on-the-fly and display below
+    if question:
+        with st.spinner("Translating..."):
+            translated = translate_to_english(question)
+        st.text_area(
+            "Translated to English",
+            value=translated,
+            height=80,
+            disabled=True
+        )
 
-mode = st.selectbox("3) Generation Mode", ["LangChain RAG","Manual FAISS","Schema Only"], key="mode_select")
-
+#
+# ─── Step 3: GENERATE SQL ───────────────────────────────────────────────────────
+#
+mode = st.selectbox("3) Generation Mode", ["LangChain RAG", "Manual FAISS", "Schema Only"], key="mode_select")
 if st.button("Generate SQL", key="generate_btn") and question:
     with st.spinner("Generating SQL…"):
         if mode == "LangChain RAG":
@@ -128,7 +156,7 @@ if st.button("Generate SQL", key="generate_btn") and question:
     st.session_state.pop("schema_data_updated", None)
 
 #
-# ─── Step 3: REVIEW / EDIT & RUN ────────────────────────────────────────────────
+# ─── Step 4: REVIEW / EDIT & RUN ────────────────────────────────────────────────
 #
 if "generated_sql" in st.session_state:
     st.subheader("4) Review / Edit Generated SQL")
@@ -140,7 +168,7 @@ if "generated_sql" in st.session_state:
         theme="github",
         show_gutter=True,
         wrap=True,
-        min_lines=len(lines)+2,
+        min_lines=len(lines) + 2,
         key="sql_editor"
     )
 
@@ -152,14 +180,15 @@ if "generated_sql" in st.session_state:
             else:
                 executor(edited_sql)
                 st.session_state["schema_data_updated"] = (
-                    extract_schema_sqlite(db_path) if db_type=="SQLite"
+                    extract_schema_sqlite(db_path)
+                    if db_type == "SQLite"
                     else extract_schema_rdbms(uri)
                 )
         except Exception as e:
             st.error(f"Execution failed: {e}")
 
 #
-# ─── Step 4: DISPLAY RESULTS or UPDATED SCHEMA ─────────────────────────────────
+# ─── Step 5: DISPLAY RESULTS or UPDATED SCHEMA ─────────────────────────────────
 #
 if "query_df" in st.session_state:
     st.subheader("5) Query Results")
