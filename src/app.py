@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 from streamlit_ace import st_ace
 
 # ─── Your existing Gemini wrapper ───────────────────────────────────────────────
-from gemini_flash_beta_llm import GeminiFlashBetaLLM
+from src.gemini_flash_beta_llm import GeminiFlashBetaLLM
 translator = GeminiFlashBetaLLM()
 
 def translate_to_english(text: str) -> str:
