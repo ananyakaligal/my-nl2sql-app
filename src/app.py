@@ -8,7 +8,7 @@ import streamlit as st
 from sqlalchemy import create_engine
 from streamlit_ace import st_ace
 
-# — ensure cache dir exists
+# — ensure HF cache dir exists in Spaces —
 os.makedirs(os.getenv("TRANSFORMERS_CACHE", "/tmp/.cache"), exist_ok=True)
 
 # — vectorstore setup (unchanged) —
@@ -43,7 +43,7 @@ with st.sidebar:
     db_path = uri = None
 
     if db_type == "SQLite":
-        uploaded = st.file_uploader("Upload .sqlite/.db", type=["sqlite","db"])
+        uploaded = st.file_uploader("Upload .sqlite/.db", type=["sqlite", "db"])
         if uploaded:
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".sqlite")
             tmp.write(uploaded.read()); tmp.close()
@@ -152,8 +152,7 @@ if "generated_sql" in st.session_state:
             else:
                 executor(edited_sql)
                 st.session_state["schema_data_updated"] = (
-                    extract_schema_sqlite(db_path)
-                    if db_type=="SQLite"
+                    extract_schema_sqlite(db_path) if db_type=="SQLite"
                     else extract_schema_rdbms(uri)
                 )
         except Exception as e:
