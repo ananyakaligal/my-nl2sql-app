@@ -1,3 +1,12 @@
+---
+title: NL2SQL Streamlit App
+emoji: 🧠
+colorFrom: blue
+colorTo: pink
+sdk: docker
+app_port: 7860
+pinned: false
+---
 
 # Text-to-SQL RAG App
 
