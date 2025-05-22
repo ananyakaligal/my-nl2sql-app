@@ -7,27 +7,32 @@ import os
 import re
 from streamlit_ace import st_ace
 
-# — Utility to clean fenced SQL —
+# — Utility to clean fenced SQL and trim blank lines —
 def clean_sql(raw_sql: str) -> str:
+    # remove ```sql fences
     sql = re.sub(r"^```(?:sql)?\s*", "", raw_sql)
     sql = re.sub(r"```$", "", sql)
-    return sql.strip()
+    # split into lines, drop trailing empty lines
+    lines = sql.splitlines()
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return "\n".join(lines).strip()
 
-# Ensure a writable cache directory
+# ensure cache dir writable
 os.makedirs(os.getenv("TRANSFORMERS_CACHE", "/tmp/.cache"), exist_ok=True)
 
-# Load your NL2SQL pipeline components
+# import your pipeline pieces
 from utils.schema_extractor import extract_schema_sqlite, extract_schema_rdbms
 from utils.embeddings import build_or_load_index
 from utils.llm_sql_generator import generate_sql_from_prompt, generate_sql_schema_only
 from langchain_sql_pipeline import generate_sql_with_langchain
 from utils.er_diagram import render_er_diagram
 
-# — Streamlit page setup —
+# — Page setup —
 st.set_page_config(page_title="Text-to-SQL", layout="wide")
 st.title("Text-to-SQL")
 
-# — Sidebar: Database connection —
+# — Sidebar: connect to a database —
 with st.sidebar:
     st.header("Database Setup")
     db_type = st.selectbox("Type", ["SQLite", "PostgreSQL", "MySQL"])
@@ -76,38 +81,39 @@ with st.sidebar:
             except Exception as e:
                 st.error(e)
 
-# If not connected, stop here
+# if not connected, stop
 if not schema:
     st.info("Use the sidebar to upload or connect to a database.")
     st.stop()
 
-# — Display current schema —
+# show current schema in an expander
 with st.expander("Current Schema", expanded=True):
     st.graphviz_chart(render_er_diagram(schema))
 
-# — Natural-language input & SQL generation —
-question = st.text_input("Ask in plain English", key="nl_input")
-mode = st.selectbox("Generation mode", ["LangChain RAG", "Manual FAISS", "Schema Only"], key="mode")
+# NL input + generation
+question = st.text_input("Ask in plain English")
+mode = st.selectbox("Generation mode", ["LangChain RAG","Manual FAISS","Schema Only"])
 
 if st.button("Generate SQL"):
     with st.spinner("Generating…"):
-        if mode == "LangChain RAG":
+        if mode=="LangChain RAG":
             raw = generate_sql_with_langchain(question, schema)
-        elif mode == "Manual FAISS":
+        elif mode=="Manual FAISS":
             idx, meta = build_or_load_index(schema)
             raw = generate_sql_from_prompt(question, idx, meta, schema)
         else:
             raw = generate_sql_schema_only(question, schema)
-    st.session_state["sql"] = clean_sql(raw)
-    st.session_state["ran"] = False
+    st.session_state.sql = clean_sql(raw)
+    st.session_state.ran = False  # reset run state
 
-# — Editable SQL editor inside a form to prevent full rerun —
+# — Editable SQL editor inside a form —
 if "sql" in st.session_state:
-    # Remove trailing newlines and count lines
-    sql_text = st.session_state["sql"].rstrip("\n")
-    line_count = sql_text.count("\n") + 1
-    # Compute height: ~30px per line, clamped between 120 and 400 px
-    height_px = min(max(line_count * 30, 120), 400)
+    # determine exact line count
+    sql_text = st.session_state.sql
+    lines = sql_text.splitlines()
+    line_count = len(lines)
+    # compute height: ~30px per line, max 500px
+    height_px = min(line_count * 30, 500)
 
     with st.form("sql_form"):
         st.subheader("Generated SQL (editable)")
@@ -115,7 +121,7 @@ if "sql" in st.session_state:
             value=sql_text,
             language="sql",
             theme="github",
-            show_gutter=True,
+            show_gutter=True,        # line numbers
             show_print_margin=False,
             wrap=True,
             height=height_px,
@@ -123,37 +129,36 @@ if "sql" in st.session_state:
         )
         run = st.form_submit_button("Run")
 
-    # — Execute on form submit —
+    # execute on submit
     if run:
         try:
-            is_select = edited_sql.strip().lower().startswith("select")
-            if is_select:
+            if edited_sql.strip().lower().startswith("select"):
                 df = connector(edited_sql)
-                st.session_state["df"] = df
+                st.session_state.df = df
             else:
                 executor(edited_sql)
-                st.session_state["df"] = None
+                st.session_state.df = None
                 # refresh schema
-                if db_type == "SQLite":
+                if db_type=="SQLite":
                     schema = extract_schema_sqlite(db_path)
                 else:
                     schema = extract_schema_rdbms(uri)
-                st.session_state["schema"] = schema
-            st.session_state["ran"] = True
+                st.session_state.schema = schema
+            st.session_state.ran = True
         except Exception as e:
             st.error(f"Error: {e}")
-            st.session_state["ran"] = False
+            st.session_state.ran = False
 
 # — Display results or updated schema —
 if st.session_state.get("ran", False):
     if st.session_state.get("df") is not None:
         st.subheader("Results")
-        st.dataframe(st.session_state["df"], use_container_width=True)
+        st.dataframe(st.session_state.df, use_container_width=True)
     else:
         st.subheader("Schema Updated")
-        st.graphviz_chart(render_er_diagram(st.session_state["schema"]))
+        st.graphviz_chart(render_er_diagram(st.session_state.schema))
         with st.expander("Table Previews"):
-            for table in st.session_state["schema"]:
+            for table in st.session_state.schema:
                 st.write(f"**{table}**")
                 preview = pd.read_sql_query(f"SELECT * FROM {table} LIMIT 5", conn)
                 st.dataframe(preview, use_container_width=True)
