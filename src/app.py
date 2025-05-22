@@ -50,24 +50,24 @@ with st.sidebar:
     db_connector = None
     db_executor = None
     db_path = None
-    db_conn = None
+    conn = None
 
     if db_type == "SQLite":
         uploaded = st.file_uploader(
             "Upload .db/.sqlite/.sql", type=["db", "sqlite", "sql"]
         )
         if uploaded:
-            # save to temp file & open one persistent connection
             tf = tempfile.NamedTemporaryFile(delete=False, suffix=".sqlite")
-            tf.write(uploaded.read()); tf.close()
+            tf.write(uploaded.read())
+            tf.close()
             db_path = tf.name
-            db_conn = sqlite3.connect(db_path)
+            conn = sqlite3.connect(db_path)
             schema_data = extract_schema_sqlite(db_path)
-            db_connector = lambda q: pd.read_sql_query(q, db_conn)
+            db_connector = lambda q: pd.read_sql_query(q, conn)
             def _exec(q):
-                cur = db_conn.cursor()
+                cur = conn.cursor()
                 cur.execute(q)
-                db_conn.commit()
+                conn.commit()
                 return cur
             db_executor = _exec
 
@@ -108,17 +108,18 @@ if schema_data:
     st.graphviz_chart(render_er_diagram(schema_data))
 
     st.subheader("Ask Your Database")
-    q_col, m_col = st.columns((3, 1))
-    with q_col:
-        question = st.text_input(
-            "Your Question",
-            placeholder="e.g. List rock-genre tracks",
-            label_visibility="collapsed",
-        )
-    with m_col:
-        mode = st.selectbox("Mode", ["LangChain RAG", "Manual FAISS", "Schema Only"])
+    question = st.text_input(
+        "Your Question",
+        placeholder="e.g. List rock-genre tracks",
+        key="user_question",
+        label_visibility="collapsed"
+    )
+    mode = st.selectbox(
+        "Mode", ["LangChain RAG", "Manual FAISS", "Schema Only"], key="mode_select"
+    )
 
-    if st.button("Generate SQL"):
+    # 1) Generate SQL and store in session_state
+    if st.button("Generate SQL", key="gen_sql"):
         with st.spinner("Generating…"):
             if mode == "LangChain RAG":
                 raw = generate_sql_with_langchain(question, schema_data)
@@ -127,55 +128,62 @@ if schema_data:
                 raw = generate_sql_from_prompt(question, idx, meta, schema_data)
             else:
                 raw = generate_sql_schema_only(question, schema_data)
-        sql = clean_sql(raw)
+        st.session_state["last_sql"] = clean_sql(raw)
+        st.session_state["ran"] = False  # reset run state
 
-        st.subheader("Generated SQL (editable)")
-        edited_sql = st_ace(
-            value=sql,
-            language="sql",
-            theme="dracula",
-            height=180,
-            key="sql_editor",
-            show_gutter=True,
-            show_print_margin=False,
-            wrap=True,
-        )
+    # 2) Display editor + Run Query in a form
+    if "last_sql" in st.session_state:
+        with st.form("sql_form"):
+            edited_sql = st_ace(
+                value=st.session_state["last_sql"],
+                language="sql",
+                theme="dracula",
+                height=180,
+                key="sql_editor",
+                show_gutter=True,
+                show_print_margin=False,
+                wrap=True,
+            )
+            run = st.form_submit_button("Run Query")
 
-        if db_executor and st.button("Run Query"):
-            is_select = edited_sql.strip().lower().startswith("select")
+        # 3) Execute on form submit
+        if run:
             try:
-                if is_select:
-                    # Read query
+                sql_trim = edited_sql.strip().lower()
+                if sql_trim.startswith("select"):
                     df = db_connector(edited_sql)
-                    st.subheader("Results")
-                    st.metric("Rows returned", len(df))
-                    st.dataframe(df, use_container_width=True)
+                    st.session_state["last_df"] = df
                 else:
-                    # Write query / DDL
                     db_executor(edited_sql)
-                    st.success("Query executed successfully!")
-
-                    # Re-extract updated schema
-                    if db_path:
+                    st.session_state["last_df"] = None
+                    # refresh schema
+                    if db_type == "SQLite":
                         schema_data = extract_schema_sqlite(db_path)
                     else:
-                        # remote DB: re-extract from URI
                         schema_data = extract_schema_rdbms(uri)
-
-                    st.subheader("Updated Schema Diagram")
-                    st.graphviz_chart(render_er_diagram(schema_data))
-
-                    # Show previews of each table
-                    st.subheader("Table Previews")
-                    for table, cols in schema_data.items():
-                        st.markdown(f"**{table}**")
-                        preview = pd.read_sql_query(
-                            f"SELECT * FROM {table} LIMIT 5",
-                            db_conn if db_type=="SQLite" else conn
-                        )
-                        st.dataframe(preview, use_container_width=True)
-
+                    st.session_state["last_schema"] = schema_data
+                st.session_state["ran"] = True
             except Exception as e:
                 st.error(f"Execution failed: {e}")
+                st.session_state["ran"] = False
+
+    # 4) Show results or updated schema
+    if st.session_state.get("ran", False):
+        if st.session_state.get("last_df") is not None:
+            st.subheader("Results")
+            st.metric("Rows returned", len(st.session_state["last_df"]))
+            st.dataframe(st.session_state["last_df"], use_container_width=True)
+        else:
+            st.subheader("Query executed successfully!")
+            st.subheader("Updated Schema Diagram")
+            st.graphviz_chart(render_er_diagram(st.session_state["last_schema"]))
+            st.subheader("Table Previews (up to 5 rows)")
+            for table, _ in st.session_state["last_schema"].items():
+                st.markdown(f"**{table}**")
+                preview = pd.read_sql_query(
+                    f"SELECT * FROM {table} LIMIT 5",
+                    conn
+                )
+                st.dataframe(preview, use_container_width=True)
 else:
     st.info("Use the sidebar to upload or connect to a database.")
