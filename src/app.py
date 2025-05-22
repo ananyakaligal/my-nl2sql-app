@@ -8,7 +8,7 @@ import streamlit as st
 from sqlalchemy import create_engine
 from streamlit_ace import st_ace
 
-# — writable cache dir for HF Spaces —
+# — ensure cache dir exists
 os.makedirs(os.getenv("TRANSFORMERS_CACHE", "/tmp/.cache"), exist_ok=True)
 
 # — vectorstore setup (unchanged) —
@@ -25,7 +25,6 @@ from utils.er_diagram          import render_er_diagram
 def clean_sql(raw_sql: str) -> str:
     sql = re.sub(r"^```(?:sql)?\s*", "", raw_sql)
     sql = re.sub(r"```$", "", sql)
-    # drop trailing blanks
     lines = sql.splitlines()
     while lines and not lines[-1].strip():
         lines.pop()
@@ -114,7 +113,6 @@ else:
 
 mode = st.selectbox("3) Generation Mode", ["LangChain RAG","Manual FAISS","Schema Only"], key="mode_select")
 
-# Generate SQL and stash it in session state
 if st.button("Generate SQL", key="generate_btn") and question:
     with st.spinner("Generating SQL…"):
         if mode == "LangChain RAG":
@@ -126,7 +124,6 @@ if st.button("Generate SQL", key="generate_btn") and question:
             raw = generate_sql_schema_only(question, schema_data)
 
     st.session_state["generated_sql"] = clean_sql(raw)
-    # clear previous results
     st.session_state.pop("query_df", None)
     st.session_state.pop("schema_data_updated", None)
 
@@ -135,8 +132,8 @@ if st.button("Generate SQL", key="generate_btn") and question:
 #
 if "generated_sql" in st.session_state:
     st.subheader("4) Review / Edit Generated SQL")
-    sql_text = st.session_state["generated_sql"]
-    lines    = sql_text.splitlines()
+    sql_text   = st.session_state["generated_sql"]
+    lines      = sql_text.splitlines()
     edited_sql = st_ace(
         value=sql_text,
         language="sql",
@@ -155,7 +152,8 @@ if "generated_sql" in st.session_state:
             else:
                 executor(edited_sql)
                 st.session_state["schema_data_updated"] = (
-                    extract_schema_sqlite(db_path) if db_type=="SQLite"
+                    extract_schema_sqlite(db_path)
+                    if db_type=="SQLite"
                     else extract_schema_rdbms(uri)
                 )
         except Exception as e:
@@ -164,15 +162,15 @@ if "generated_sql" in st.session_state:
 #
 # ─── Step 4: DISPLAY RESULTS or UPDATED SCHEMA ─────────────────────────────────
 #
-if df := st.session_state.get("query_df"):
+if "query_df" in st.session_state:
     st.subheader("5) Query Results")
-    st.dataframe(df, use_container_width=True)
+    st.dataframe(st.session_state["query_df"], use_container_width=True)
 
-elif schema_upd := st.session_state.get("schema_data_updated"):
+elif "schema_data_updated" in st.session_state:
     st.subheader("5) Schema Updated")
-    st.graphviz_chart(render_er_diagram(schema_upd))
+    st.graphviz_chart(render_er_diagram(st.session_state["schema_data_updated"]))
     with st.expander("Table Previews"):
-        for tbl in schema_upd:
+        for tbl in st.session_state["schema_data_updated"]:
             st.write(f"**{tbl}**")
             preview = pd.read_sql_query(f"SELECT * FROM {tbl} LIMIT 5", conn)
             st.dataframe(preview, use_container_width=True)
