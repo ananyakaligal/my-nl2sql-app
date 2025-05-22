@@ -26,47 +26,50 @@ from utils.llm_sql_generator import (
 from langchain_sql_pipeline import generate_sql_with_langchain
 from utils.er_diagram import render_er_diagram
 
-# --- SQL cleaning utility ---
 def clean_sql(raw_sql: str) -> str:
-    # Remove any ```sql or ``` markers and strip whitespace
+    """Strip any ```sql fences."""
     sql = re.sub(r"^```(?:sql)?\s*", "", raw_sql)
     sql = re.sub(r"```$", "", sql)
     return sql.strip()
 
-# --- Streamlit page config ---
 st.set_page_config(page_title="Text-to-SQL RAG Demo", layout="wide")
-
-# --- Hide default Streamlit chrome ---
 st.markdown(
     """
     <style>
       #MainMenu, header, footer { visibility: hidden; }
       .css-12oz5g7, .block-container { background: #000 !important; }
     </style>
-    """,
-    unsafe_allow_html=True,
+    """, unsafe_allow_html=True
 )
 
-# --- Sidebar for DB setup ---
+# --- Sidebar: Database Setup ---
 with st.sidebar:
     st.header("Database Setup")
     db_type = st.selectbox("Type", ["SQLite", "PostgreSQL", "MySQL"])
     schema_data = None
     db_connector = None
+    db_executor = None
     db_path = None
+    db_conn = None
 
     if db_type == "SQLite":
         uploaded = st.file_uploader(
             "Upload .db/.sqlite/.sql", type=["db", "sqlite", "sql"]
         )
         if uploaded:
+            # save to temp file & open one persistent connection
             tf = tempfile.NamedTemporaryFile(delete=False, suffix=".sqlite")
-            tf.write(uploaded.read())
-            tf.close()
+            tf.write(uploaded.read()); tf.close()
             db_path = tf.name
+            db_conn = sqlite3.connect(db_path)
             schema_data = extract_schema_sqlite(db_path)
-            db_connector = lambda q: pd.read_sql_query(q, sqlite3.connect(db_path))
-            db_executor = lambda q: sqlite3.connect(db_path).cursor().execute(q)
+            db_connector = lambda q: pd.read_sql_query(q, db_conn)
+            def _exec(q):
+                cur = db_conn.cursor()
+                cur.execute(q)
+                db_conn.commit()
+                return cur
+            db_executor = _exec
 
     else:
         with st.expander("Enter credentials"):
@@ -84,26 +87,26 @@ with st.sidebar:
                 else f"mysql+pymysql://{user}:{pwd}@{host}:{port}/{name}"
             )
             try:
-                schema_data = extract_schema_rdbms(uri)
                 engine = create_engine(uri)
-                db_connector = lambda q: pd.read_sql_query(q, engine)
-                db_executor = lambda q: engine.execute(q)
+                conn = engine.connect()
+                schema_data = extract_schema_rdbms(uri)
+                db_connector = lambda q: pd.read_sql_query(q, conn)
+                def _exec(q):
+                    conn.execute(q)
+                    return conn
+                db_executor = _exec
                 st.success("Connected")
             except Exception as e:
                 st.error(f"{e}")
 
-# --- Main panel ---
+# --- Main Interface ---
 st.title("Text-to-SQL Generator")
 
 if schema_data:
-    # Show which DB type is connected
     st.markdown(f"**Connected Database:** `{db_type}`")
-
-    # Display schema
     st.subheader("Schema Diagram")
     st.graphviz_chart(render_er_diagram(schema_data))
 
-    # Input question + mode
     st.subheader("Ask Your Database")
     q_col, m_col = st.columns((3, 1))
     with q_col:
@@ -113,9 +116,7 @@ if schema_data:
             label_visibility="collapsed",
         )
     with m_col:
-        mode = st.selectbox(
-            "Mode", ["LangChain RAG", "Manual FAISS", "Schema Only"]
-        )
+        mode = st.selectbox("Mode", ["LangChain RAG", "Manual FAISS", "Schema Only"])
 
     if st.button("Generate SQL"):
         with st.spinner("Generating…"):
@@ -126,39 +127,55 @@ if schema_data:
                 raw = generate_sql_from_prompt(question, idx, meta, schema_data)
             else:
                 raw = generate_sql_schema_only(question, schema_data)
-
-        # Clean and strip any code fences
         sql = clean_sql(raw)
 
-        # === Editable SQL editor ===
         st.subheader("Generated SQL (editable)")
         edited_sql = st_ace(
             value=sql,
             language="sql",
             theme="dracula",
-            height=180,         # fixed height
+            height=180,
             key="sql_editor",
             show_gutter=True,
             show_print_margin=False,
             wrap=True,
         )
 
-        # === Run the edited SQL ===
-        if db_connector and st.button("Run Query"):
-            st.subheader("Results")
+        if db_executor and st.button("Run Query"):
+            is_select = edited_sql.strip().lower().startswith("select")
             try:
-                df = db_connector(edited_sql)
-                st.metric("Rows returned", len(df))
-                st.dataframe(df, use_container_width=True)
+                if is_select:
+                    # Read query
+                    df = db_connector(edited_sql)
+                    st.subheader("Results")
+                    st.metric("Rows returned", len(df))
+                    st.dataframe(df, use_container_width=True)
+                else:
+                    # Write query / DDL
+                    db_executor(edited_sql)
+                    st.success("Query executed successfully!")
 
-                # Re-extract and redraw schema if using SQLite
-                if db_path:
-                    schema_data = extract_schema_sqlite(db_path)
+                    # Re-extract updated schema
+                    if db_path:
+                        schema_data = extract_schema_sqlite(db_path)
+                    else:
+                        # remote DB: re-extract from URI
+                        schema_data = extract_schema_rdbms(uri)
+
                     st.subheader("Updated Schema Diagram")
                     st.graphviz_chart(render_er_diagram(schema_data))
 
+                    # Show previews of each table
+                    st.subheader("Table Previews")
+                    for table, cols in schema_data.items():
+                        st.markdown(f"**{table}**")
+                        preview = pd.read_sql_query(
+                            f"SELECT * FROM {table} LIMIT 5",
+                            db_conn if db_type=="SQLite" else conn
+                        )
+                        st.dataframe(preview, use_container_width=True)
+
             except Exception as e:
                 st.error(f"Execution failed: {e}")
-
 else:
     st.info("Use the sidebar to upload or connect to a database.")
