@@ -4,7 +4,10 @@ import pickle
 from sentence_transformers import SentenceTransformer
 import numpy as np
 
-model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+os.makedirs(os.getenv("STREAMLIT_HOME", "/tmp/.streamlit"), exist_ok=True)
+os.makedirs(os.getenv("TRANSFORMERS_CACHE", "/tmp/.cache"), exist_ok=True)
+
+model = SentenceTransformer("all-MiniLM-L6-v2", cache_folder=os.getenv("TRANSFORMERS_CACHE", "/tmp/.cache"))
 
 # Always compute the vectorstore directory relative to this file
 vectorstore_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../vectorstore"))

@@ -7,10 +7,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-ENV STREAMLIT_SERVER_HEADLESS=true
-ENV STREAMLIT_SERVER_ENABLE_CORS=false
-ENV STREAMLIT_SERVER_PORT=7860
-ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
+ENV TRANSFORMERS_CACHE=/tmp/.cache
+ENV HF_HOME=/tmp/.cache/huggingface
+ENV XDG_CACHE_HOME=/tmp/.cache
+ENV STREAMLIT_HOME=/tmp/.streamlit
 
 EXPOSE 7860
 
