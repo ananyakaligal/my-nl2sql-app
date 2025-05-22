@@ -9,11 +9,11 @@ from sqlalchemy import create_engine
 from streamlit_ace import st_ace
 import google.generativeai as genai
 
-# — Configure Gemini (for future translation) —
+# — Configure Gemini for translation —
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
 def translate_to_english(text: str) -> str:
-    """Translate any language text into English via Gemini."""
+    """Translate any-language text into English via Gemini."""
     resp = genai.chat.completions.create(
         model="models/chat-bison-001",
         prompt_messages=[
@@ -25,7 +25,7 @@ def translate_to_english(text: str) -> str:
     return resp.choices[0].message.content.strip()
 
 def clean_sql(raw_sql: str) -> str:
-    """Strip markdown fences and trailing blanks."""
+    """Strip markdown fences and trailing blank lines."""
     sql = re.sub(r"^```(?:sql)?\s*", "", raw_sql)
     sql = re.sub(r"```$", "", sql)
     lines = sql.splitlines()
@@ -47,6 +47,7 @@ from utils.llm_sql_generator   import generate_sql_from_prompt, generate_sql_sch
 from langchain_sql_pipeline    import generate_sql_with_langchain
 from utils.er_diagram          import render_er_diagram
 
+# — Streamlit page config —
 st.set_page_config(page_title="Text-to-SQL RAG Demo", layout="wide")
 st.title("Text-to-SQL Generator")
 
@@ -112,25 +113,23 @@ st.subheader("2) Enter Your Question")
 input_mode = st.radio("Input Mode", ["English", "Other Language"], horizontal=True)
 
 if input_mode == "English":
-    # Single input box for English
     question = st.text_input(
         "Question (in English)",
         placeholder="e.g. List rock-genre tracks",
         key="user_question"
     )
-
 else:
-    # First box: original text in chosen language
     lang_choice = st.selectbox(
         "Language",
-        ["Spanish", "French", "German", "Chinese", "Hindi", "Japanese", "Other"]
+        ["Spanish", "French", "German", "Chinese", "Hindi", "Japanese", "Other"],
+        key="lang_choice"
     )
     question = st.text_area(
         f"Question (in {lang_choice})",
         placeholder=f"Enter your question in {lang_choice}",
         key="user_question"
     )
-    # Immediately below: disabled box showing English translation
+    # — NEW: show English translation right below —
     if question:
         with st.spinner("Translating to English…"):
             translated = translate_to_english(question)
@@ -145,7 +144,6 @@ else:
 # ─── Step 3: GENERATE SQL ───────────────────────────────────────────────────────
 #
 mode = st.selectbox("3) Generation Mode", ["LangChain RAG", "Manual FAISS", "Schema Only"], key="mode_select")
-
 if st.button("Generate SQL", key="generate_btn") and question:
     with st.spinner("Generating SQL…"):
         if mode == "LangChain RAG":
