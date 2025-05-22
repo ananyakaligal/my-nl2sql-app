@@ -28,8 +28,8 @@ from utils.er_diagram import render_er_diagram
 
 # --- SQL cleaning utility ---
 def clean_sql(raw_sql):
-    sql = re.sub(r"^`{3}(?:sql)?\\s*", "", raw_sql)
-    sql = re.sub(r"`{3}$", "", sql)
+    sql = re.sub(r"^```(?:sql)?\\s*", "", raw_sql)
+    sql = re.sub(r"```$", "", sql)
     return sql.strip()
 
 # --- Page setup ---
@@ -94,6 +94,8 @@ with st.sidebar:
 st.title("Text-to-SQL Generator")
 
 if schema_data:
+    st.markdown(f"**Connected Database:** `{db_type}`")
+
     st.subheader("Schema Diagram")
     st.graphviz_chart(render_er_diagram(schema_data))
 
