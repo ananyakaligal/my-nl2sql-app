@@ -4,6 +4,8 @@ import pickle
 from sentence_transformers import SentenceTransformer
 import numpy as np
 
+import os
+
 os.makedirs(os.getenv("STREAMLIT_HOME", "/tmp/.streamlit"), exist_ok=True)
 os.makedirs(os.getenv("TRANSFORMERS_CACHE", "/tmp/.cache"), exist_ok=True)
 
