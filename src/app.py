@@ -13,8 +13,15 @@ from gemini_flash_beta_llm import GeminiFlashBetaLLM
 translator = GeminiFlashBetaLLM()
 
 def translate_to_english(text: str) -> str:
-    """Translate any-language text into English via Gemini Flash."""
-    prompt = f"Translate the following text into English:\n\n{text}"
+    """
+    Translate any-language text into English via Gemini Flash,
+    returning only the translated sentence with no extra explanation.
+    """
+    prompt = (
+        "Translate the following text into English. "
+        "Respond with only the translated sentence and nothing else:\n\n"
+        f"{text}"
+    )
     return translator(prompt).strip()
 
 def clean_sql(raw_sql: str) -> str:
@@ -26,7 +33,7 @@ def clean_sql(raw_sql: str) -> str:
         lines.pop()
     return "\n".join(lines).strip()
 
-# ─── Ensure Hugging Face cache dir exists ───────────────────────────────────────
+# ─── Ensure Hugging Face cache dir exists ────────────────────────────────────────
 os.makedirs(os.getenv("TRANSFORMERS_CACHE", "/tmp/.cache"), exist_ok=True)
 
 # ─── Vectorstore setup ──────────────────────────────────────────────────────────
