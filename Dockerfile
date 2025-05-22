@@ -7,14 +7,16 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# ✅ Use only /tmp — Hugging Face allows writing here
-ENV STREAMLIT_HOME=/tmp/.streamlit
-ENV STREAMLIT_SERVER_HEADLESS=true
-ENV STREAMLIT_SERVER_ENABLE_CORS=false
-ENV STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION=false
-ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
-ENV STREAMLIT_SERVER_PORT=7860
+# Create cache dirs and set safe env vars
+RUN mkdir -p /tmp/.cache/huggingface && \
+    mkdir -p /tmp/.streamlit && \
+    chmod -R 777 /tmp/.cache /tmp/.streamlit
 
+ENV TRANSFORMERS_CACHE=/tmp/.cache
+ENV HF_HOME=/tmp/.cache/huggingface
+ENV XDG_CACHE_HOME=/tmp/.cache
+ENV STREAMLIT_HOME=/tmp/.streamlit
+ENV STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION=false
 
 EXPOSE 7860
 

@@ -1,18 +1,26 @@
+import os
 import faiss
-import os
 import pickle
-from sentence_transformers import SentenceTransformer
 import numpy as np
+from sentence_transformers import SentenceTransformer
+from huggingface_hub import login
 
-import os
-
-# force Streamlit to use the right directory
+# Ensure correct Streamlit and cache directories
 os.environ["STREAMLIT_HOME"] = os.getenv("STREAMLIT_HOME", "/tmp/.streamlit")
-os.makedirs(os.getenv("TRANSFORMERS_CACHE", "/tmp/.cache"), exist_ok=True)
+os.environ["TRANSFORMERS_CACHE"] = os.getenv("TRANSFORMERS_CACHE", "/tmp/.cache")
 
-model = SentenceTransformer("all-MiniLM-L6-v2", cache_folder=os.getenv("TRANSFORMERS_CACHE", "/tmp/.cache"))
+# Login to Hugging Face using token (only if provided)
+hf_token = os.environ.get("HF_TOKEN")
+if hf_token:
+    login(token=hf_token)
 
-# Always compute the vectorstore directory relative to this file
+# Load model with specified cache folder
+model = SentenceTransformer(
+    "sentence-transformers/all-MiniLM-L6-v2",
+    cache_folder=os.environ["TRANSFORMERS_CACHE"]
+)
+
+# Set up FAISS index paths
 vectorstore_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../vectorstore"))
 os.makedirs(vectorstore_dir, exist_ok=True)
 
@@ -39,7 +47,6 @@ def build_or_load_index(schema_dict):
     index = faiss.IndexFlatL2(len(embeddings[0]))
     index.add(np.array(embeddings).astype("float32"))
 
-    # Directory is already ensured above
     faiss.write_index(index, index_path)
     with open(meta_path, "wb") as f:
         pickle.dump(metadata, f)

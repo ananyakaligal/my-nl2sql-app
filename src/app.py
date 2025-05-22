@@ -6,9 +6,9 @@ from sqlalchemy import create_engine
 import os
 import re
 
-# force Streamlit to use the right directory
-os.environ["STREAMLIT_HOME"] = os.getenv("STREAMLIT_HOME", "/tmp/.streamlit")
+# === Ensure proper writable directories for HF Spaces ===
 os.makedirs(os.getenv("TRANSFORMERS_CACHE", "/tmp/.cache"), exist_ok=True)
+os.makedirs(os.getenv("STREAMLIT_HOME", "/tmp/.streamlit"), exist_ok=True)
 
 # --- Ensure vectorstore directory exists relative to src/app.py ---
 vectorstore_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../vectorstore"))
@@ -28,13 +28,7 @@ from utils.er_diagram import render_er_diagram
 
 # --- SQL cleaning utility ---
 def clean_sql(raw_sql):
-    """
-    Removes markdown code block markers from the generated SQL.
-    Handles ```sql ... ```
-    """
-    # Remove ```sql or ``` from start
     sql = re.sub(r"^```(?:sql)?\s*", "", raw_sql)
-    # Remove trailing ```
     sql = re.sub(r"```$", "", sql)
     return sql.strip()
 
@@ -44,7 +38,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# Hide Streamlit chrome
+# --- Hide default Streamlit UI ---
 st.markdown(
     """
     <style>
@@ -96,11 +90,9 @@ with st.sidebar:
 st.title("Text-to-SQL Generator")
 
 if schema_data:
-    # Schema diagram
     st.subheader("Schema Diagram")
     st.graphviz_chart(render_er_diagram(schema_data))
 
-    # Question + mode
     st.subheader("Ask Your Database")
     q_col, m_col = st.columns((3, 1))
     with q_col:
@@ -118,7 +110,6 @@ if schema_data:
             key="mode_select"
         )
 
-    # Generate button
     generate = st.button("Generate SQL", use_container_width=True, key="generate_btn")
 
     if generate and question:
@@ -132,11 +123,9 @@ if schema_data:
                 raw = generate_sql_schema_only(question, schema_data)
         sql = clean_sql(raw)
 
-        # Show SQL
         st.subheader("Generated SQL")
         st.code(sql, language="sql")
 
-        # Show results
         if db_connector:
             st.subheader("Results")
             try:
@@ -145,6 +134,5 @@ if schema_data:
                 st.dataframe(df, use_container_width=True)
             except Exception as e:
                 st.error(f"Execution failed: {e}")
-
 else:
     st.info("Use the sidebar to upload or connect to a database.")
