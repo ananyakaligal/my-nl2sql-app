@@ -8,45 +8,46 @@ import streamlit as st
 from sqlalchemy import create_engine
 from streamlit_ace import st_ace
 
-# === Ensure proper writable cache directory (HF Spaces) ===
+# — writable cache dir for HF Spaces —
 os.makedirs(os.getenv("TRANSFORMERS_CACHE", "/tmp/.cache"), exist_ok=True)
 
-# --- Ensure vectorstore directory exists relative to this file ---
+# — vectorstore setup (unchanged) —
 vectorstore_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../vectorstore"))
 os.makedirs(vectorstore_dir, exist_ok=True)
 index_path = os.path.join(vectorstore_dir, "schema_index.faiss")
 
-from utils.schema_extractor import extract_schema_sqlite, extract_schema_rdbms
-from utils.embeddings       import build_or_load_index
-from utils.llm_sql_generator import (
-    generate_sql_from_prompt,
-    generate_sql_schema_only,
-)
-from langchain_sql_pipeline   import generate_sql_with_langchain
-from utils.er_diagram         import render_er_diagram
+from utils.schema_extractor    import extract_schema_sqlite, extract_schema_rdbms
+from utils.embeddings          import build_or_load_index
+from utils.llm_sql_generator   import generate_sql_from_prompt, generate_sql_schema_only
+from langchain_sql_pipeline    import generate_sql_with_langchain
+from utils.er_diagram          import render_er_diagram
 
 def clean_sql(raw_sql: str) -> str:
     sql = re.sub(r"^```(?:sql)?\s*", "", raw_sql)
     sql = re.sub(r"```$", "", sql)
-    return sql.strip()
+    # drop trailing blanks
+    lines = sql.splitlines()
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return "\n".join(lines).strip()
 
-# — Streamlit page config —
 st.set_page_config(page_title="Text-to-SQL RAG Demo", layout="wide")
 st.title("Text-to-SQL Generator")
 
-# — Sidebar: Database setup —
+#
+# ─── Sidebar: DATABASE CONNECTION ────────────────────────────────────────────────
+#
 with st.sidebar:
-    st.header("Database Setup")
-    db_type = st.selectbox("Type", ["SQLite", "PostgreSQL", "MySQL"])
+    st.header("1) Database Setup")
+    db_type = st.selectbox("DB Type", ["SQLite", "PostgreSQL", "MySQL"])
     schema_data = connector = executor = conn = None
     db_path = uri = None
 
     if db_type == "SQLite":
-        uploaded = st.file_uploader("Upload .sqlite/.db", type=["sqlite", "db"])
+        uploaded = st.file_uploader("Upload .sqlite/.db", type=["sqlite","db"])
         if uploaded:
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".sqlite")
-            tmp.write(uploaded.read())
-            tmp.close()
+            tmp.write(uploaded.read()); tmp.close()
             db_path = tmp.name
             conn = sqlite3.connect(db_path)
             schema_data = extract_schema_sqlite(db_path)
@@ -82,49 +83,40 @@ if not schema_data:
     st.info("Use the sidebar to connect or upload a database.")
     st.stop()
 
-# — Show schema diagram —
+#
+# ─── Show CURRENT SCHEMA ────────────────────────────────────────────────────────
+#
 with st.expander("Current Schema", expanded=True):
     st.graphviz_chart(render_er_diagram(schema_data))
 
-# — Step 2: Enter question with English / Other-Language toggle —
-st.subheader("Ask Your Database")
-
-input_mode = st.radio(
-    "Input Mode",
-    ["English", "Other Language"],
-    horizontal=True
-)
+#
+# ─── Step 2: ENTER YOUR QUESTION ────────────────────────────────────────────────
+#
+st.subheader("2) Enter Your Question")
+input_mode = st.radio("Input Mode", ["English", "Other Language"], horizontal=True)
 
 if input_mode == "English":
     question = st.text_input(
         "Question (in English)",
         placeholder="e.g. List rock-genre tracks",
-        key="user_question",
-        label_visibility="collapsed"
+        key="user_question"
     )
 else:
     lang_choice = st.selectbox(
         "Language",
-        ["Spanish", "French", "German", "Chinese", "Hindi", "Japanese", "Other"]
+        ["Spanish","French","German","Chinese","Hindi","Japanese","Other"]
     )
     question = st.text_area(
         f"Question (in {lang_choice})",
         placeholder=f"Enter your question in {lang_choice}",
-        key="user_question",
-        label_visibility="collapsed"
+        key="user_question"
     )
 
-mode = st.selectbox(
-    "Generation Mode",
-    ["LangChain RAG", "Manual FAISS", "Schema Only"],
-    key="mode_select"
-)
+mode = st.selectbox("3) Generation Mode", ["LangChain RAG","Manual FAISS","Schema Only"], key="mode_select")
 
-generate = st.button("Generate SQL", use_container_width=True, key="generate_btn")
-
-# — SQL generation & execution as before —
-if generate and question:
-    with st.spinner("Generating…"):
+# Generate SQL and stash it in session state
+if st.button("Generate SQL", key="generate_btn") and question:
+    with st.spinner("Generating SQL…"):
         if mode == "LangChain RAG":
             raw = generate_sql_with_langchain(question, schema_data)
         elif mode == "Manual FAISS":
@@ -132,31 +124,55 @@ if generate and question:
             raw = generate_sql_from_prompt(question, idx, meta, schema_data)
         else:
             raw = generate_sql_schema_only(question, schema_data)
-    sql = clean_sql(raw)
 
-    st.subheader("Generated SQL")
+    st.session_state["generated_sql"] = clean_sql(raw)
+    # clear previous results
+    st.session_state.pop("query_df", None)
+    st.session_state.pop("schema_data_updated", None)
+
+#
+# ─── Step 3: REVIEW / EDIT & RUN ────────────────────────────────────────────────
+#
+if "generated_sql" in st.session_state:
+    st.subheader("4) Review / Edit Generated SQL")
+    sql_text = st.session_state["generated_sql"]
+    lines    = sql_text.splitlines()
     edited_sql = st_ace(
-        value=sql,
+        value=sql_text,
         language="sql",
         theme="github",
         show_gutter=True,
         wrap=True,
-        min_lines=len(sql.splitlines()) + 2,
+        min_lines=len(lines)+2,
         key="sql_editor"
     )
 
-    if connector and st.button("Run Query", use_container_width=True, key="run_query"):
-        st.subheader("Results")
+    if st.button("Run Query", key="run_query") and connector:
         try:
-            df = connector(edited_sql)
-            st.metric("Rows returned", len(df))
-            st.dataframe(df, use_container_width=True)
-
-            # refresh schema if SQLite
-            if db_path:
-                schema_data = extract_schema_sqlite(db_path)
-                st.subheader("Updated Schema")
-                st.graphviz_chart(render_er_diagram(schema_data))
-
+            if edited_sql.strip().lower().startswith("select"):
+                df = connector(edited_sql)
+                st.session_state["query_df"] = df
+            else:
+                executor(edited_sql)
+                st.session_state["schema_data_updated"] = (
+                    extract_schema_sqlite(db_path) if db_type=="SQLite"
+                    else extract_schema_rdbms(uri)
+                )
         except Exception as e:
             st.error(f"Execution failed: {e}")
+
+#
+# ─── Step 4: DISPLAY RESULTS or UPDATED SCHEMA ─────────────────────────────────
+#
+if df := st.session_state.get("query_df"):
+    st.subheader("5) Query Results")
+    st.dataframe(df, use_container_width=True)
+
+elif schema_upd := st.session_state.get("schema_data_updated"):
+    st.subheader("5) Schema Updated")
+    st.graphviz_chart(render_er_diagram(schema_upd))
+    with st.expander("Table Previews"):
+        for tbl in schema_upd:
+            st.write(f"**{tbl}**")
+            preview = pd.read_sql_query(f"SELECT * FROM {tbl} LIMIT 5", conn)
+            st.dataframe(preview, use_container_width=True)
