@@ -6,7 +6,8 @@ import numpy as np
 
 import os
 
-os.makedirs(os.getenv("STREAMLIT_HOME", "/tmp/.streamlit"), exist_ok=True)
+# force Streamlit to use the right directory
+os.environ["STREAMLIT_HOME"] = os.getenv("STREAMLIT_HOME", "/tmp/.streamlit")
 os.makedirs(os.getenv("TRANSFORMERS_CACHE", "/tmp/.cache"), exist_ok=True)
 
 model = SentenceTransformer("all-MiniLM-L6-v2", cache_folder=os.getenv("TRANSFORMERS_CACHE", "/tmp/.cache"))
