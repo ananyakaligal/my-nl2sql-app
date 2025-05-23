@@ -1,3 +1,4 @@
+# .github/workflows/ci.yml
 name: CI
 
 on:
@@ -10,25 +11,22 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     steps:
-      # 1) Checkout your code
+      # 1. checkout code
       - uses: actions/checkout@v3
 
-      # 2) QEMU + Buildx setup for multi-arch builds (standard)
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+      # 2. QEMU + Buildx setup
+      - uses: docker/setup-qemu-action@v2
+      - uses: docker/setup-buildx-action@v2
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      # 3) Restore your previous BuildKit cache (if any)
-      - name: Restore Docker build cache
-        id: restore-cache
+      # 3. restore build cache
+      - name: Restore buildx cache
         uses: actions/cache@v3
+        id: cache
         with:
           path: /tmp/.buildx-cache
           key: ${{ runner.os }}-buildx-cache
 
-      # 4) Build your image, telling BuildKit to use that cache
+      # 4. build with cache-from/to
       - name: Build Docker image
         run: |
           docker buildx create --use
@@ -39,19 +37,18 @@ jobs:
             -f Dockerfile \
             -t my-nl2sql-app:ci .
 
-      # 5) Save the cache only if it was a miss
-      - name: Save Docker build cache
-        if: steps.restore-cache.outputs.cache-hit != 'true'
+      # 5. save cache if miss
+      - name: Save buildx cache
+        if: steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache@v3
         with:
           path: /tmp/.buildx-cache
           key: ${{ runner.os }}-buildx-cache
 
-      # 6) Run your tests inside the freshly built container
+      # 6. run pytest inside container, with PYTHONPATH so imports work
       - name: Run tests in container
         run: |
           docker run --rm \
-            -w /app \
             -e PYTHONPATH=/app/src:/app \
             my-nl2sql-app:ci \
             pytest --maxfail=1 --disable-warnings -q
