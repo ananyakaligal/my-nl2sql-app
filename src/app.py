@@ -64,7 +64,7 @@ from utils.er_diagram          import render_er_diagram
 def main():
     # ─── Page config ────────────────────────────────────────────────────────────
     st.set_page_config(page_title="Text-to-SQL RAG Demo", layout="wide")
-    st.title("Text-to-SQL Generator")
+    st.title("Natural Language to SQL Generator")
 
     # ─── 1) Sidebar: DB connection ───────────────────────────────────────────────
     with st.sidebar:
